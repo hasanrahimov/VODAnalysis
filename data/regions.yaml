@@ -1,0 +1,79 @@
+# =============================================================================
+# HUD Region Definitions for R6M VOD Analyzer  (local OCR pipeline)
+# =============================================================================
+# Coordinates are FRACTIONS of the frame (0..1):
+#     x = left/width   y = top/height   w = width/width   h = height/height
+# This makes regions resolution- AND aspect-ratio-independent — no resizing or
+# stretching. Calibrate at native resolution:
+#     python calibrate.py hud_samples/<frame>.png
+# (Values > 1 are still accepted as raw pixels for backward compat.)
+# =============================================================================
+
+default_profile: tora_default
+
+profiles:
+
+  tora_default:
+
+    regions:
+
+      # --- ACTION phase -----------------------------------------------------
+
+      killfeed:
+        description: "Kill feed — TOP-LEFT. Killer.TAG [icon] Victim.TAG (generous
+          height: HUD moved up)"
+        x: 0.0
+        y: 0.0
+        w: 0.1747
+        h: 0.165
+
+      timer:
+        description: "Round timer (MM:SS) — top-center"
+        x: 0.5235
+        y: 0.0
+        w: 0.06
+        h: 0.052
+
+      objective_banner:
+        description: "Orange text under timer: Search for bombs / Fortify bomb sites
+          / Defend..."
+        x: 0.5
+        y: 0.068
+        w: 0.11
+        h: 0.033
+
+      plant_banner:
+        description: "Center blue notification: '<name> is activating the defuser'
+          / 'Your team has activated the defuser' / 'Preparation Phase'"
+        x: 0.375
+        y: 0.1991
+        w: 0.25
+        h: 0.0463
+
+      # --- ROUND-END --------------------------------------------------------
+
+      roundend_text:
+        description: "Center banner: WON / DEFEAT / YOUR TEAM HAS BEEN ELIMINATED"
+        x: 0.4245
+        y: 0.3795
+        w: 0.151
+        h: 0.1111
+
+      roundnum1:
+        description: "Left score/round digit near the timer"
+        x: 0.475
+        y: 0.0
+        w: 0.025
+        h: 0.06
+
+      roundnum2:
+        description: "Right score/round digit near the timer"
+        x: 0.6075
+        y: 0.0
+        w: 0.025
+        h: 0.06
+
+    # No phase_detectors needed — phases are detected from OCR text
+    # (round_end "WON/DEFEAT", prep "Search for bombs"/"Fortify"), everything
+    # else is ACTION. (op_pick is folded into ACTION; its killfeed is empty.)
+

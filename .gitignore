@@ -1,0 +1,33 @@
+# Secrets (old API version)
+.env
+credentials.json
+backup/.env
+backup/credentials.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Generated reports / outputs
+out/
+rounds_*.json
+
+# Generated icon templates are kept; uncomment to ignore
+# templates/*.png
+hud_samples /*.png
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local-only
+.claude/
+backup/
+*.bak

@@ -1,0 +1,17 @@
+# Local OCR pipeline (no paid APIs)
+opencv-python>=4.8.0
+numpy>=1.24.0
+pytesseract>=0.3.10
+rapidfuzz>=3.0.0
+pillow>=10.0.0
+pyyaml>=6.0
+ruamel.yaml>=0.18        # GUI: edit regions.yaml while preserving comments
+rich>=13.0.0
+click>=8.0.0
+# tkinter ships with python (Windows installer includes it) — no pip needed
+
+# Video download / frame extraction
+yt-dlp>=2024.1.0
+
+# NOTE: Tesseract OCR *binary* must be installed separately (see SETUP_LOCAL.md).
+# pytesseract is only a Python wrapper around it.
