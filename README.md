@@ -1,204 +1,194 @@
 # R6M VOD Analyzer
 
-Локальный анализ записей матчей **Rainbow Six Mobile**: читает killfeed, таймер,
-результат раунда, плант, OK/OD, трейды — и печатает готовую таблицу в консоль
-для ручного переноса в Google Sheets.
+Extracts per-round statistics from **Rainbow Six Mobile** match recordings and
+produces a paste-ready table for a stats spreadsheet.
 
-**Без платных API.** Всё локально: Tesseract (OCR) + OpenCV (template matching).
+It runs entirely on your machine, with no paid APIs: **OpenCV** handles image
+preprocessing and killfeed icon matching, and **Tesseract OCR** reads the on-screen text.
 
----
+> **Status:** work in progress. The pipeline has been tuned on a limited set of
+> recordings from one custom HUD, so check the output before relying on it.
 
-## 1. Установка
+## What it extracts
+
+| Automatic | Entered manually |
+|---|---|
+| Kills and deaths per player (confirmed kills only; knocks are ignored) | Operators |
+| Opening kill / opening death (OK/OD), who, and the round timer at that moment | Site |
+| Round result and running score | Strategy |
+| Side, defuser plant and planter | 1vX clutches |
+| Traded deaths and per-round KOST | |
+
+Each round is exported as a tab-separated row matching the spreadsheet columns.
+Manual fields are left blank.
+
+## How it works
+
+1. **Frame sampling:** `ffmpeg` extracts one frame every N seconds.
+2. **Per-frame reading (parallel):** each HUD region is cropped using fractional
+   coordinates, so layouts do not depend on resolution or aspect ratio.
+3. **Killfeed parsing:** Tesseract segments the feed into rows, template matching
+   classifies each row's icon as a kill or a knock, and names are fuzzy-matched
+   against the rosters.
+4. **Round reduction (sequential):** frames are grouped into rounds, repeated
+   killfeed entries are removed, and OK/OD, trades, score and KOST are computed.
+
+## Requirements
+
+- Windows (commands below use PowerShell)
+- Python 3.10+ with Tkinter (included in the standard Windows installer)
+- [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
+- [FFmpeg](https://ffmpeg.org/)
 
 ```powershell
 pip install -r requirements.txt
-winget install UB-Mannheim.TesseractOCR     # сам OCR-движок
-winget install Gyan.FFmpeg                   # для извлечения кадров из видео
+winget install UB-Mannheim.TesseractOCR
+winget install Gyan.FFmpeg
 ```
 
-Проверка:
-```powershell
-& "C:\Program Files\Tesseract-OCR\tesseract.exe" --version
-ffmpeg -version
-```
-Если Tesseract стоит в другом месте — пропиши путь:
-```powershell
-$env:TESSERACT_CMD="C:\твой\путь\tesseract.exe"
-```
-
----
-
-## 2. Приложение (GUI) — самый простой способ
-
-Двойной клик по **`run_app.bat`** (или `python src\app.py`) откроет окно с 3 вкладками:
-
-- **Analyze** — выбираешь источник (видео/папка/YouTube), профиль, сторону,
-  игроков, таймкоды → кнопка **Run** → прогресс-бар → таблица раундов +
-  предупреждения. Отчёт сохраняется автоматически.
-- **Calibrate** — грузишь кадр, выбираешь регион, **двигаешь слайдеры x/y/w/h**
-  с живым превью рамок, жмёшь **Read region (OCR)** чтобы проверить распознавание,
-  **Save** пишет доли обратно в `regions.yaml`. Никакого ручного редактирования YAML.
-- **Test OCR** — грузишь кадр → **Run** → аннотированная картинка со всеми
-  регионами + полный разбор: фаза, плант, счёт, таймер, killfeed, OCR по каждому региону.
-
-Всё остальное ниже — то же самое через командную строку (если удобнее скриптом).
-
----
-
-## 2b. Командная строка
-
-Самый частый случай — **файл с телефона** (присланный в Telegram **как файл**, не как видео):
+If Tesseract is installed in a non-default location:
 
 ```powershell
-python src\analyze_local.py --video "C:\path\record.mp4"
+$env:TESSERACT_CMD="C:\path\to\tesseract.exe"
 ```
 
-Скрипт спросит в терминале:
-- **Профиль HUD** (если их несколько; сейчас один — возьмёт автоматически)
-- **Стартовую сторону** раунда 1 (ATK/DEF)
-- **4-го и 5-го игрока** (короткие имена для таблицы)
-- **Таймкоды** — запись может начинаться с лобби, поэтому предложит обрезать:
-  ```
-  The recording may include lobby/prep before the match.
-  Trim to a time range? [y/n]
-    Start (HH:MM:SS, blank = beginning):
-    End   (HH:MM:SS, blank = end):
-  ```
+## Usage
 
-Всё можно задать и флагами, чтобы не спрашивал:
+### Desktop app
+
+Double-click `run_app.bat`, or run `python src\app.py`.
+
+| Tab | Purpose |
+|---|---|
+| **Analyze** | Choose a source and match details, run the analysis, then copy the TSV. |
+| **Calibrate** | Load a frame and adjust HUD regions with sliders and a live preview. |
+| **Test OCR** | Run every reader on one frame to see what it detects. |
+
+### Command line
+
 ```powershell
 python src\analyze_local.py --video "record.mp4" `
   --start 00:05:30 --end 00:38:00 `
-  --start-side ATK --slot3 JLA --slot4 Trackz --profile tora_default
+  --start-side ATK --vs ACND --map Bank --date 20.06.2026 `
+  --lineup "MrBom.AB,Hopeless.AB,Saiin.AB,UnkxwnTT,Tora.AB" `
+  --enemy "Magneto,SeiKo.FX,ACND.Sway,ACND.Gav,ACND.Specify" `
+  --interval 2
 ```
 
-### Другие источники
+Omitted match details are requested in the terminal. Other sources:
 
 ```powershell
-# Папка готовых скриншотов (по порядку имён файлов)
 python src\analyze_local.py --frames .\hud_samples
-
-# YouTube VOD (скачает сегмент)
 python src\analyze_local.py --url "https://youtu.be/XXXX" --start 01:12:30 --end 01:38:45
 ```
 
----
+| Option | Description |
+|---|---|
+| `--frames`, `--video`, `--url` | Input source |
+| `--start`, `--end` | Segment to analyze (`HH:MM:SS`) |
+| `--profile` | HUD profile from `data/regions.yaml` |
+| `--interval` | Seconds between sampled frames (default: 3) |
+| `--start-side` | Side in round 1: `ATK` or `DEF` |
+| `--vs`, `--map`, `--date` | Match details for the export |
+| `--lineup` | Five in-game nicks, in the order of `SHEET_PLAYERS` |
+| `--enemy` | Enemy nicks, comma-separated |
+| `--workers` | Parallel OCR workers (default: up to 8) |
+| `--debug` | Save analyzed frames and a per-frame OCR log |
 
-## 3. Выбор профиля HUD
+**For best accuracy, always provide `--enemy`.** Write all nicks exactly as they
+appear in the killfeed. Every name is then matched to a known player, and
+unrecognized text is discarded.
 
-Профили — это раскладки HUD разных игроков (координаты регионов). Хранятся в
-`data/regions.yaml` под `profiles:`.
+## Output
 
-- **Через терминал**: запусти без `--profile` — если профилей несколько, покажет
-  список и спросит номер. Если профиль один — возьмёт его автоматически.
-- **Флагом**: `--profile tora_default`
-- **Список профилей**: `python src\calibrate.py --list-profiles`
+Files are saved to `out/<profile>/reports/`:
 
-Добавить новый профиль: скопируй блок профиля в `regions.yaml`, переименуй ключ,
-поправь координаты (см. §5).
+| File | Contents |
+|---|---|
+| `sheet_<timestamp>.tsv` | Paste-ready spreadsheet rows |
+| `report_<timestamp>.txt` | Console report (CLI runs) |
+| `rounds_<timestamp>.json` | Raw per-round data |
 
----
+With debug enabled, `out/<profile>/debug_<timestamp>/` contains every analyzed
+frame and `frames_debug.tsv`.
 
-## 4. Что выводится
+## Calibrating a new HUD
 
-Во время анализа — **прогресс-бар** (кадров обработано / осталось времени).
-Анализ **параллельный** (`--workers N`, по умолчанию = ядра CPU, до 8) — на
-i5-12450H это в ~5-6 раз быстрее последовательного.
+Calibration is needed once per HUD layout. The **Calibrate** tab is the easiest
+way to do it. From the command line:
 
-После анализа отчёт **автоматически сохраняется**:
-```
-out/<profile>/reports/report_<дата>.txt    — копия консольного вывода
-out/<profile>/reports/rounds_<дата>.json   — сырые данные раундов
-```
-Так что вывод не потеряется, даже если закрыть терминал.
+1. Capture a frame at the recording's native resolution:
 
-Две таблицы:
-
-- **Frame Timeline** — каждый проанализированный кадр (фаза, таймер, киллы). Подстраховка.
-- **Round Summary** — агрегат по раундам, готов к переносу:
-
-| # | Side | Score | Res | OK/OD | Plant | Our Kills | Our Deaths (← killer / trade) |
-|---|------|-------|-----|-------|-------|-----------|-------------------------------|
-| 5 | ATK | 2-2 | WIN | OK MrBom | ✓ MrBom | MrBom ×2, Tora ×1 | Hope ← drayn.s7 [traded by Tora] |
-
-Серые зоны трейдов и «сбитые планты» выводятся отдельным списком Warnings.
-
----
-
-## 5. Калибровка под свой HUD (один раз на профиль)
-
-Нужна, когда добавляешь профиль или HUD сместился. Подробно — в
-[docs/SETUP_LOCAL.md](docs/SETUP_LOCAL.md). Кратко:
-**Проще всего — вкладка Calibrate в GUI** (слайдеры + живое превью). Ниже — CLI-вариант.
-
-1. **Кадр для калибровки** (нативное разрешение телефона, напр. 2688×1216):
    ```powershell
    ffmpeg -ss 00:10:00 -i "record.mp4" -frames:v 1 -q:v 2 hud_samples/native.png
    ```
-2. **Регионы**: `python src\calibrate.py hud_samples/native.png` → правь доли в
-   `data/regions.yaml` (координаты в долях 0..1, не в пикселях) → повторяй.
-3. **Шаблоны иконок килфида** (3 штуки) из того же кадра:
+
+2. Preview the regions and adjust `data/regions.yaml` (values are fractions from 0 to 1):
+
    ```powershell
-   python src\make_template.py hud_samples/native.png --name icon_kill    # прицел
-   python src\make_template.py hud_samples/native.png --name icon_kill2   # череп
-   python src\make_template.py hud_samples/native.png --name icon_dbno    # стрелка вниз (knock)
+   python src\calibrate.py hud_samples/native.png
    ```
-4. **Маппинг ников**: в `src/config.py` → `ROSTER_ALIASES` впиши игровые ники → короткие
-   имена (напр. `"codeTora": "Tora"`).
-5. **Проверка**: `python src\test_ocr.py hud_samples/native.png` — покажет что распознал.
 
----
+3. Cut killfeed icon templates from a frame that shows each icon:
 
-## 6. Конфиг (`src/config.py`) — основное
+   ```powershell
+   python src\make_template.py hud_samples/native.png --name icon_kill
+   python src\make_template.py hud_samples/native.png --name icon_bodykill
+   python src\make_template.py hud_samples/native.png --name icon_crosshair
+   python src\make_template.py hud_samples/native.png --name icon_dbno
+   ```
 
-| Параметр | Что |
+4. Check the result:
+
+   ```powershell
+   python src\test_ocr.py hud_samples/native.png
+   ```
+
+To add a profile, copy an existing block under `profiles:` in `data/regions.yaml`,
+rename it, and adjust its coordinates. More detail is in
+[docs/SETUP_LOCAL.md](docs/SETUP_LOCAL.md).
+
+## Configuration
+
+The main settings are in `src/config.py`:
+
+| Setting | Description |
 |---|---|
-| `TESSERACT_CMD` | путь к tesseract.exe |
-| `FRAME_INTERVAL_SEC` | интервал кадров (3 — чтобы ловить 3-сек уведомления планта) |
-| `OUR_TEAM_TAG` | суффикс твоей команды в никах (напр. `AB`, `PLR`) |
-| `ROSTER_ALIASES` | игровой ник → короткое имя для таблицы |
-| `TRADE_WINDOW_SEC` | окно трейда (5 сек) |
-| `TEMPLATE_KILL_ICONS` / `TEMPLATE_DBNO_ICONS` | имена файлов шаблонов |
-| `OPERATORS_ATK/DEF` | список операторов (для будущего; сейчас операторы вручную) |
+| `TESSERACT_CMD` | Path to the Tesseract executable |
+| `FRAME_INTERVAL_SEC` | Default sampling interval |
+| `SHEET_PLAYERS` | Player columns in the spreadsheet |
+| `ROSTER_NICKS` | Default in-game nick for each player column |
+| `OUR_TEAM_TAG` | Team tag used to identify your players |
+| `TRADE_WINDOW_SEC` | Time window for counting a traded death |
+| `DEDUP_WINDOW_SEC` | Time window for removing repeated killfeed entries |
+| `TEMPLATE_KILL_ICONS`, `TEMPLATE_DBNO_ICONS` | Icon template files |
+| `TEMPLATE_MATCH_THRESHOLD` | Minimum icon match score |
 
----
+## Project structure
 
-## 7. Что автоматически, что вручную
-
-**Авто:** killfeed (киллы/смерти по `.TAG`), таймер, фаза, результат раунда,
-счёт, номер раунда, плант (start+who+confirm), OK/OD, трейды.
-
-**Вручную** (вписываешь в Sheets сам): операторы (в HUD они иконки), сайт, страт.
-
----
-
-## Структура проекта
-
-```
-run_app.bat          ← запуск GUI (двойной клик)
-README.md
-requirements.txt
-
-src/                 ← весь код
-  app.py             GUI-приложение (3 вкладки)
-  analyze_local.py   движок анализа (используется и GUI, и CLI)
-  calibrate.py       калибровка регионов (CLI)
-  make_template.py   нарезка шаблонов иконок килфида
-  test_ocr.py        тест распознавания на одном кадре
-  config.py          настройки
-  phase_detector.py  фаза раунда + счёт/номер раунда
-  killfeed_reader.py killfeed → киллы (template + OCR + .TAG)
-  plant_reader.py    детект планта
-  timer_reader.py    таймер
-  dedup.py           дедуп килфида
-  console_report.py  вывод таблиц
-  regions_loader.py  загрузка регионов + кроп (дробные координаты)
-  ocr_utils.py       препроцессинг + Tesseract + fuzzy
-  video_processor.py скачивание/нарезка видео (yt-dlp + ffmpeg)
-
-data/regions.yaml    координаты регионов (профили, доли 0..1)
-templates/           icon_kill.png, icon_kill2.png, icon_dbno.png
-hud_samples/         твои скриншоты для калибровки
-docs/SETUP_LOCAL.md  детальный гайд по калибровке
-out/                 сгенерированные отчёты (автосейв)
+```text
+run_app.bat            Launches the desktop app
+requirements.txt       Python dependencies
+data/regions.yaml      HUD profiles and region coordinates
+templates/             Killfeed icon templates
+hud_samples/           Sample frames for calibration and testing
+docs/SETUP_LOCAL.md    Detailed setup and calibration guide
+src/
+  app.py               Desktop app
+  analyze_local.py     Analysis engine and CLI
+  killfeed_reader.py   Killfeed parsing and name matching
+  phase_detector.py    Phase, side, round result and score reading
+  timer_reader.py      Round timer reading
+  plant_reader.py      Defuser plant detection
+  ocr_utils.py         Image preprocessing and Tesseract helpers
+  dedup.py             Killfeed de-duplication
+  sheet_export.py      TSV export
+  sheets_writer.py     Google Sheets writer (not connected to the app yet)
+  video_processor.py   Video download and frame extraction
+  console_report.py    Console tables and reports
+  regions_loader.py    HUD profile loading and cropping
+  calibrate.py         Region calibration tool
+  make_template.py     Icon template cutter
+  test_ocr.py          Single-frame diagnostics
+  config.py            Settings
 ```
